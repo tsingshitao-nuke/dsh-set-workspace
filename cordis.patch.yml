@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-set-workspace
+      name: 'dsh-set-workspace'

@@ -21,9 +21,9 @@ const CSS = `
 .dsw-muted{color:var(--dsw-alias-label-tertiary,#8b949e);cursor:default}
 .dsw-error{color:#e5484d;cursor:default}
 .dsw-toast{position:absolute;left:12px;right:12px;bottom:12px;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-label-primary,#1f2328);color:var(--dsw-alias-bg-module-platform,#fff);font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.2);pointer-events:none}
-.dsw-toggle{cursor:pointer;border:none;background:transparent;color:var(--dsw-alias-label-secondary,#57606a);display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;font-size:13px}
+.dsw-toggle{cursor:pointer;border:none;background:transparent;color:var(--dsw-alias-label-primary,#1f2328);display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;font-size:13px}
 .dsw-toggle:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
-.dsw-toggle[aria-pressed="true"]{color:var(--dsw-alias-label-primary,#1f2328)}
+.dsw-toggle[aria-pressed="true"]{background:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.06))}
 .dsw-toggle-label{white-space:nowrap}
 `
 

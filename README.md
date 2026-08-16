@@ -1,52 +1,50 @@
 # dsh-set-workspace
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) web plugin that adds a **Codex-style file tree** with a right-click **"Set as workspace"** action on folders.
+A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds a **Windows File Explorer right-click menu**: right-click a folder → **"设为 DSH 工作区" (Set as DSH workspace)** → the folder is registered as a workspace in the running DSH host.
 
-Right-click any folder in the tree → register it as a DSH workspace (the same durable registry the built-in workspace browser uses). No new storage, no schema — it reuses the core `workspaceRegistry` through the official `ctx.workspaces` client service.
-
-## Features
-
-- Floating file tree rooted at the current session's working directory (falls back to the recent workspace, then home).
-- Right-click a folder (or the root) for a context menu:
-  - **Set as workspace** — register the folder in the workspace registry (idempotent).
-  - **Open in new session** — register + open a new session in that workspace.
-  - **Copy path** — copy the absolute path to the clipboard.
-- Folders that are already workspaces show a `WS` badge.
-- A toggle button is added to the sidebar footer (left rail) to open/close the panel.
-- Light/dark theme via the DSH design tokens; zh/en copy.
-
-## Install
-
-This is a **bundle** plugin. Two ways to install it into a DSH profile:
-
-### Manual (works anywhere)
-
-```bash
-npm pack          # produces dsh-set-workspace-0.1.0.tgz
-```
-
-Then install the `.tgz` into your profile's `bundles` and add the package name to the profile `package.json` `dependencies` + `bundles` array (or use the runtime super-injector: `dev_install_package` / `dev_inject_plugin` with the package directory).
-
-### From source / injector
-
-```bash
-npm install       # dev deps: typescript + tsdown
-npm run build     # host tsc + tsdown client bundle -> lib/
-```
-
-## Requirements
-
-- Node >= 20
-- A running DSH web profile that provides the client services `workspaces`, `sessions`, `slots`, and the `@deepseek-ai/dsh-client-ui-primitives` module.
+No new storage, no schema, no new tools — it rides the existing `workspace.create` RPC that the built-in workspace picker already uses, so the workspace appears in DSH immediately and persists exactly like one created from the UI.
 
 ## How it works
 
-The host half (`src/index.ts`) is a no-op; everything is a client plugin (`src/client/index.tsx`) that:
+```
+File Explorer right-click
+  └─ runs  node set-workspace.cjs "<folder>"
+       ├─ reads  ~/.dsh/dsh-set-workspace/runtime.json   (port, published by the host plugin)
+       └─ POST   http://127.0.0.1:<port>/api/workspace.create { path }
+```
 
-1. Registers a toggle button into the `sidebar.footer.action` slot.
-2. Mounts a floating panel into its own React root.
-3. Lists one directory level at a time through `ctx.workspaces.listDirectory` (the official browse capability) and lazily loads children on expand.
-4. Calls `ctx.workspaces.create({ path })` on "Set as workspace" — the exact RPC the built-in workspace picker uses.
+1. The **host half** (`src/index.ts`) publishes the live webserver port to `~/.dsh/dsh-set-workspace/runtime.json`.
+2. The **context menu** (HKCU registry) runs the standalone **bridge** (`bin/set-workspace.cjs`).
+3. The bridge calls the host's existing `/api/workspace.create` endpoint (idempotent — re-running for the same folder returns the existing workspace).
+
+## Install
+
+1. Install the bundle into your DSH profile (dependencies + bundles), e.g. with the runtime super-injector's `dev_install_package`, or by adding `dsh-set-workspace` to the profile `package.json`.
+2. Restart DSH (so the host half publishes `runtime.json`).
+3. Register the Explorer menu:
+
+```bash
+node <package>/bin/install-context-menu.cjs
+```
+
+To remove it:
+
+```bash
+node <package>/bin/install-context-menu.cjs --uninstall
+```
+
+The bridge script and the whale icon are copied to `~/.dsh/dsh-set-workspace/` (a space-free, stable location), so the registry entries survive package reinstalls.
+
+## Requirements
+
+- Windows (the context menu is HKCU `Directory\shell`, no admin rights needed)
+- Node >= 20 in `PATH`
+- A running DSH web host (the bridge talks to its loopback `/api` endpoint)
+
+## Notes
+
+- On Windows 11, third-party `Directory\shell` verbs may appear under **"Show more options"** (Shift+F10) rather than the top-level menu.
+- The icon is the DSH whale mascot (`assets/dsh-whale.ico`, copied from the app's own brand icon).
 
 ## License
 

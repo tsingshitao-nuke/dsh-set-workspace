@@ -1,7 +1,7 @@
 {
   "name": "dsh-set-workspace",
-  "version": "0.1.0",
-  "description": "DSH web plugin: a Codex-style file tree with a right-click \"Set as workspace\" action on folders, reusing the core workspace registry.",
+  "version": "0.2.0",
+  "description": "DSH plugin: right-click a folder in Windows File Explorer to register it as a DSH workspace (shell context menu + bridge to the running host).",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -10,12 +10,13 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
     "src",
+    "bin",
+    "assets",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
@@ -32,33 +33,18 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-primitives",
-        "@deepseek-ai/dsh-client-ui-slots"
-      ],
-      "platform": "web"
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-client-runtime": "*",
-    "@deepseek-ai/dsh-client-ui-primitives": "*",
-    "@deepseek-ai/dsh-client-ui-slots": "*",
-    "react": ">=18",
-    "react-dom": ">=18"
+    "@deepseek-ai/cordis": "*"
   },
   "devDependencies": {
-    "tsdown": "^0.22.14",
+    "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   },
   "scripts": {
-    "build": "bash scripts/build.sh && npm run build:client",
+    "build": "bash scripts/build.sh",
     "build:host": "bash scripts/build.sh",
-    "build:client": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "pack": "npm pack"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

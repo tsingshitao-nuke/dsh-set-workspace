@@ -9,6 +9,7 @@ import React, {
 } from 'react'
 import {
   Menu,
+  FishLogo,
   IconFolderClose16,
   IconFolderOpen16,
   IconChevronDownOutline14,
@@ -270,6 +271,7 @@ export function SetWorkspacePanel({ workspaces, sessions }: { workspaces: any; s
     <>
       <div className="dsw-panel" role="dialog" aria-label={t('title')}>
         <div className="dsw-header">
+          <FishLogo size={16} />
           <span className="dsw-title">{t('title')}</span>
           <button type="button" className="dsw-iconbtn" title={t('refresh')} onClick={refresh}>
             <IconRefreshOutline16 size={14} />

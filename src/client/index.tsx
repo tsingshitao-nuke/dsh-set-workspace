@@ -1,5 +1,6 @@
 import React, { useSyncExternalStore } from 'react'
 import { createRoot } from 'react-dom/client'
+import { FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SetWorkspacePanel } from './panel'
 import { panelStore } from './store'
 import { detectLang, tr } from './i18n'
@@ -22,14 +23,7 @@ function FooterToggleButton({ wide }: { wide?: boolean }) {
       title={t('toggle')}
       onClick={() => panelStore.toggle()}
     >
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path
-          d="M1.5 3.5a1 1 0 0 1 1-1h3.2a1 1 0 0 1 .7.3l.9.9h5.2a1.5 1.5 0 0 1 1.5 1.5v5.3a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 1.5 10V3.5Z"
-          stroke="currentColor"
-          strokeWidth="1.1"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <FishLogo size={14} />
       {wide ? <span className="dsw-toggle-label">{t('toggle')}</span> : null}
     </button>
   )

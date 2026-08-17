@@ -85,15 +85,35 @@ function notify(title, message, icon) {
 }
 
 function launchDsh(launchCommand) {
-  if (!launchCommand) return false
+  if (!launchCommand) return 0
   try {
     const { spawn } = require('node:child_process')
     const child = spawn(launchCommand, [], { detached: true, stdio: 'ignore' })
     child.unref()
-    return true
+    return child.pid || 0
   } catch {
-    return false
+    return 0
   }
+}
+
+/** Bring the just-launched DSH window to the foreground (best effort). */
+function bringToForeground(pid) {
+  if (!pid) return
+  const fire = () => {
+    try {
+      const { spawn } = require('node:child_process')
+      const ps = `(New-Object -ComObject WScript.Shell).AppActivate(${pid}) | Out-Null`
+      const child = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-Command', ps],
+        { stdio: 'ignore', detached: true, windowsHide: true },
+      )
+      child.unref()
+    } catch {}
+  }
+  fire()
+  // The window may take a moment to appear; retry a few times.
+  for (let i = 1; i <= 4; i++) setTimeout(fire, 1200 * i)
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -120,16 +140,19 @@ function call(method, payload, port) {
 async function withLaunch(fn, runtime) {
   const deadline = Date.now() + LAUNCH_TIMEOUT_MS
   let launched = false
+  let pid = 0
   let lastError
 
   for (;;) {
     try {
-      return { result: await fn(runtime.port), launched }
+      const result = await fn(runtime.port)
+      if (launched) bringToForeground(pid)
+      return { result, launched }
     } catch (error) {
       lastError = error
       if (!launched && runtime.launchCommand) {
         launched = true
-        launchDsh(runtime.launchCommand)
+        pid = launchDsh(runtime.launchCommand)
       }
       if (Date.now() >= deadline) {
         throw launched ? new Error(T.launchTimeout) : lastError

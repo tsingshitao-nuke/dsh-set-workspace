@@ -6,9 +6,16 @@
  * session in it (session id carries a `dsw-open-` prefix so the DSH client
  * auto-switches to it), and reports the result in a MessageBox.
  *
- * If DSH is not running, the bridge launches it first (using the launch
- * command the host half published in ~/.dsh/dsh-set-workspace/runtime.json),
- * waits for the loopback API to come up, then proceeds.
+ * Focus strategy (mirrors VS Code's "Open with Code"): launching the DSH
+ * Desktop executable always puts the UI in front — when DSH is down it boots,
+ * and when it is already running the app's own single-instance
+ * (`second-instance`) handler restores + shows + focuses its window from
+ * inside the app process, which is immune to the Windows foreground lock.
+ *
+ * When DSH is served into a regular browser instead, set
+ * ~/.dsh/dsh-set-workspace/config.json to { "ui": "browser" } (or install
+ * with --browser); the bridge then focuses the browser page via the loopback
+ * URL instead of the Desktop window.
  *
  * Usage: node set-workspace.cjs <folder-path>
  */
@@ -24,7 +31,9 @@ if (!path) {
   process.exit(2)
 }
 
-const RUNTIME_FILE = join(homedir(), '.dsh', 'dsh-set-workspace', 'runtime.json')
+const DEST = join(homedir(), '.dsh', 'dsh-set-workspace')
+const RUNTIME_FILE = join(DEST, 'runtime.json')
+const CONFIG_FILE = join(DEST, 'config.json')
 const LAUNCH_TIMEOUT_MS = 90_000
 const POLL_MS = 1500
 
@@ -44,7 +53,7 @@ const T = {
     okBody: (title, p) => `${title}\n${p}`,
     failTitle: '打开 DSH 工作区失败',
     failBody: (p, msg) => `${p}\n\n${msg}`,
-    unreachable: (port, msg) => `无法连接 DSH（端口 ${port}）。\n\n${msg}`,
+    unreachable: (port, msg) => `无法连接 DSH（端口 ${port}）。\n请先启动 DSH。\n\n${msg}`,
     launchTimeout: 'DSH 已启动，但等待其就绪超时。请稍后再试。',
   },
   en: {
@@ -52,20 +61,29 @@ const T = {
     okBody: (title, p) => `${title}\n${p}`,
     failTitle: 'Failed to Open DSH Workspace',
     failBody: (p, msg) => `${p}\n\n${msg}`,
-    unreachable: (port, msg) => `Cannot reach DSH (port ${port}).\n\n${msg}`,
+    unreachable: (port, msg) => `Cannot reach DSH (port ${port}).\nStart DSH first.\n\n${msg}`,
     launchTimeout: 'DSH was launched, but timed out waiting for it to become ready. Try again shortly.',
   },
 }[detectLang()]
 
-function readRuntime() {
-  let rt = {}
+function readJson(file, fallback) {
   try {
-    rt = JSON.parse(readFileSync(RUNTIME_FILE, 'utf8'))
-  } catch {}
+    return { ...fallback, ...JSON.parse(readFileSync(file, 'utf8')) }
+  } catch {
+    return fallback
+  }
+}
+
+function readRuntime() {
+  const rt = readJson(RUNTIME_FILE, {})
   return {
     port: Number.isInteger(rt.port) && rt.port > 0 ? rt.port : 10736,
     launchCommand: typeof rt.launchCommand === 'string' ? rt.launchCommand : '',
   }
+}
+
+function readConfig() {
+  return readJson(CONFIG_FILE, {})
 }
 
 function notify(title, message, icon) {
@@ -85,44 +103,29 @@ function notify(title, message, icon) {
 }
 
 function launchDsh(launchCommand) {
-  if (!launchCommand) return 0
+  if (!launchCommand) return false
   try {
     const { spawn } = require('node:child_process')
     const child = spawn(launchCommand, [], { detached: true, stdio: 'ignore' })
     child.unref()
-    return child.pid || 0
+    return true
   } catch {
-    return 0
+    return false
   }
 }
 
-/**
- * Bring the DSH UI to the foreground (restore from minimized + take focus).
- * When we launched it, target the known PID. When it is already running, find
- * the Desktop window by process name. If that process is absent (DSH is served
- * into a regular browser), open/focus the loopback URL instead.
- */
-function focusDsh(runtime, launchedPid) {
-  const exeName = (runtime.launchCommand || '').split(/[\\/]/).pop().replace(/\.exe$/i, '')
-  const script = join(__dirname, 'focus-dsh.ps1')
-  const fire = () => {
-    try {
-      const { spawn } = require('node:child_process')
-      const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script]
-      if (launchedPid) args.push('-TargetPid', String(launchedPid))
-      else if (exeName) args.push('-ProcessName', exeName)
-      args.push('-Url', `http://127.0.0.1:${runtime.port}`)
-      const child = spawn(
-        'powershell.exe',
-        args,
-        { stdio: 'ignore', detached: true, windowsHide: true },
-      )
-      child.unref()
-    } catch {}
-  }
-  fire()
-  // The window may take a moment to appear; retry a few times.
-  for (let i = 1; i <= 4; i++) setTimeout(fire, 1200 * i)
+/** Open / focus the DSH page in the default browser. */
+function openUrl(port) {
+  try {
+    const { spawn } = require('node:child_process')
+    const ps = `Start-Process 'http://127.0.0.1:${port}'`
+    const child = spawn(
+      'powershell.exe',
+      ['-NoProfile', '-Command', ps],
+      { stdio: 'ignore', detached: true, windowsHide: true },
+    )
+    child.unref()
+  } catch {}
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -143,24 +146,21 @@ function call(method, payload, port) {
 
 /**
  * Run `fn` (the API call), launching DSH and polling until reachable when the
- * host is down. A network error triggers the launch; a host response (any HTTP
- * status) is returned as-is.
+ * host is down. A network error triggers the launch (boot); a host response
+ * (any HTTP status) is returned as-is.
  */
-async function withLaunch(fn, runtime) {
+async function withApi(fn, runtime) {
   const deadline = Date.now() + LAUNCH_TIMEOUT_MS
   let launched = false
-  let pid = 0
   let lastError
 
   for (;;) {
     try {
-      const result = await fn(runtime.port)
-      return { result, launched, pid }
+      return await fn(runtime.port)
     } catch (error) {
       lastError = error
       if (!launched && runtime.launchCommand) {
-        launched = true
-        pid = launchDsh(runtime.launchCommand)
+        launched = launchDsh(runtime.launchCommand)
       }
       if (Date.now() >= deadline) {
         throw launched ? new Error(T.launchTimeout) : lastError
@@ -172,15 +172,20 @@ async function withLaunch(fn, runtime) {
 
 async function main() {
   const runtime = readRuntime()
+  const config = readConfig()
+  // Default: the Desktop app. Use the browser page when configured, or when no
+  // Desktop launcher was ever recorded (headless / browser-only setup).
+  const useBrowser = config.ui === 'browser' || (config.ui !== 'desktop' && !runtime.launchCommand)
+
+  if (!useBrowser) {
+    // Desktop: launching the exe boots DSH when down, and triggers the app's
+    // second-instance focus when it is already running (like VS Code).
+    launchDsh(runtime.launchCommand)
+  }
 
   let created
-  let launched = false
-  let launchedPid = 0
   try {
-    const r = await withLaunch(() => call('workspace.create', { path }, runtime.port), runtime)
-    created = r.result
-    launched = r.launched
-    launchedPid = r.pid
+    created = await withApi(() => call('workspace.create', { path }, runtime.port), runtime)
   } catch (error) {
     const msg = String((error && error.message) || error)
     notify(T.failTitle, T.unreachable(runtime.port, msg), 16)
@@ -200,8 +205,9 @@ async function main() {
 
   const workspace = result.value.workspace
 
-  // Bring the DSH UI to the foreground (Desktop window, or the browser page).
-  focusDsh(runtime, launched ? launchedPid : 0)
+  // Browser mode: focus the DSH page in the browser (Desktop mode already
+  // focused via second-instance).
+  if (useBrowser) openUrl(runtime.port)
 
   try {
     await call('session.create', { workspaceId: workspace.workspaceId, sessionId: `dsw-open-${Date.now()}` }, runtime.port)

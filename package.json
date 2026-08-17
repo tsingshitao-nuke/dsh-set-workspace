@@ -1,6 +1,6 @@
 {
   "name": "dsh-set-workspace",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "DSH plugin: right-click a folder in Windows File Explorer to open it as a DSH workspace (launches DSH if needed, creates the workspace, starts a session, and switches the DSH page to it).",
   "type": "module",
   "main": "./lib/index.js",

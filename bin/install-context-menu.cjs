@@ -3,22 +3,26 @@
  * Install / uninstall the Windows File Explorer context menu for
  * dsh-set-workspace (HKCU only — no admin rights needed).
  *
- *   node install-context-menu.cjs             install
- *   node install-context-menu.cjs --uninstall remove
+ *   node install-context-menu.cjs                install
+ *   node install-context-menu.cjs --browser      install, focus via browser page
+ *   node install-context-menu.cjs --uninstall    remove
  *
  * The bridge, the whale icon, and a hidden-window launcher (VBS) are copied to
  * a stable, space-free location (~/.dsh/dsh-set-workspace/), and the registry
  * command runs the launcher through wscript.exe so no console window flashes.
- * The menu label follows the OS UI language (zh / en).
+ * The menu label follows the OS UI language (zh / en). `--browser` writes
+ * config.json so the bridge focuses the DSH page in the browser instead of the
+ * Desktop window.
  */
 'use strict'
 
 const { spawnSync } = require('node:child_process')
-const { copyFileSync, mkdirSync, existsSync, writeFileSync } = require('node:fs')
+const { copyFileSync, mkdirSync, existsSync, writeFileSync, rmSync } = require('node:fs')
 const { join, dirname } = require('node:path')
 const { homedir } = require('node:os')
 
 const uninstall = process.argv.includes('--uninstall')
+const useBrowser = process.argv.includes('--browser')
 const SRC = __dirname
 const DEST = join(homedir(), '.dsh', 'dsh-set-workspace')
 const NODE = process.execPath
@@ -60,7 +64,12 @@ if (uninstall) {
 
 mkdirSync(DEST, { recursive: true })
 copyFileSync(join(SRC, 'set-workspace.cjs'), join(DEST, 'set-workspace.cjs'))
-copyFileSync(join(SRC, 'focus-dsh.ps1'), join(DEST, 'focus-dsh.ps1'))
+// Clean up the obsolete external-focus helper from earlier versions.
+rmSync(join(DEST, 'focus-dsh.ps1'), { force: true })
+
+if (useBrowser) {
+  writeFileSync(join(DEST, 'config.json'), JSON.stringify({ ui: 'browser' }, null, 2) + '\n', 'utf8')
+}
 
 const icoSrc = join(dirname(SRC), 'assets', 'dsh-whale.ico')
 if (existsSync(icoSrc)) copyFileSync(icoSrc, join(DEST, 'dsh-whale.ico'))

@@ -60,6 +60,7 @@ if (uninstall) {
 
 mkdirSync(DEST, { recursive: true })
 copyFileSync(join(SRC, 'set-workspace.cjs'), join(DEST, 'set-workspace.cjs'))
+copyFileSync(join(SRC, 'focus-dsh.ps1'), join(DEST, 'focus-dsh.ps1'))
 
 const icoSrc = join(dirname(SRC), 'assets', 'dsh-whale.ico')
 if (existsSync(icoSrc)) copyFileSync(icoSrc, join(DEST, 'dsh-whale.ico'))

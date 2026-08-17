@@ -97,32 +97,24 @@ function launchDsh(launchCommand) {
 }
 
 /**
- * Bring the DSH UI to the foreground. When we launched it, activate the known
- * PID. When it is already running, find the Desktop window by process name and
- * activate it; if that process is absent (DSH is served into a regular
- * browser), open/focus the loopback URL instead.
+ * Bring the DSH UI to the foreground (restore from minimized + take focus).
+ * When we launched it, target the known PID. When it is already running, find
+ * the Desktop window by process name. If that process is absent (DSH is served
+ * into a regular browser), open/focus the loopback URL instead.
  */
 function focusDsh(runtime, launchedPid) {
   const exeName = (runtime.launchCommand || '').split(/[\\/]/).pop().replace(/\.exe$/i, '')
+  const script = join(__dirname, 'focus-dsh.ps1')
   const fire = () => {
     try {
       const { spawn } = require('node:child_process')
-      let ps
-      if (launchedPid) {
-        ps = `(New-Object -ComObject WScript.Shell).AppActivate(${launchedPid}) | Out-Null`
-      } else if (exeName) {
-        ps = [
-          "$ErrorActionPreference='SilentlyContinue'",
-          `$p = Get-Process -Name ${JSON.stringify(exeName)} | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1`,
-          'if ($p) { (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null }',
-          `else { Start-Process 'http://127.0.0.1:${runtime.port}' }`,
-        ].join('\n')
-      } else {
-        ps = `Start-Process 'http://127.0.0.1:${runtime.port}'`
-      }
+      const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script]
+      if (launchedPid) args.push('-TargetPid', String(launchedPid))
+      else if (exeName) args.push('-ProcessName', exeName)
+      args.push('-Url', `http://127.0.0.1:${runtime.port}`)
       const child = spawn(
         'powershell.exe',
-        ['-NoProfile', '-Command', ps],
+        args,
         { stdio: 'ignore', detached: true, windowsHide: true },
       )
       child.unref()

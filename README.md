@@ -9,6 +9,7 @@ Unofficial community project. Not affiliated with or endorsed by DeepSeek.
 ## What it does
 
 - Right-click a folder in File Explorer, then choose **Open DSH Workspace Here**.
+- If DSH is not running, the bridge launches it and waits for it to become ready before opening the workspace.
 - The folder is registered as a workspace (idempotent) and a session is started in it.
 - The DSH page switches to the new workspace automatically (the client half watches for the session and opens it — no page reload).
 - Menu label and dialogs follow the OS UI language (Chinese / English).
@@ -18,7 +19,7 @@ Unofficial community project. Not affiliated with or endorsed by DeepSeek.
 
 ## Install
 
-Requirements: Windows, a running `dsh web`, Node.js >= 20 on `PATH`.
+Requirements: Windows, Node.js >= 20 on `PATH`, and DSH Desktop installed. The bridge launches DSH automatically when it is not running; it discovers the launch path from a runtime file that DSH writes, so run DSH once before the first use.
 
 One-liner (PowerShell 5.1+ / pwsh):
 
@@ -54,7 +55,8 @@ node ~/.dsh/profiles/web/node_modules/dsh-set-workspace/bin/install-context-menu
 File Explorer right-click
   └─ wscript launch-hidden.vbs "%1"           (hidden window)
        └─ node set-workspace.cjs "<folder>"
-            ├─ reads  ~/.dsh/dsh-set-workspace/runtime.json   (port, published by the host half)
+            ├─ reads  ~/.dsh/dsh-set-workspace/runtime.json   (port + launch command)
+            ├─ if DSH is down: launches it, polls until /api is ready
             ├─ POST   /api/workspace.create { path }          (idempotent)
             ├─ POST   /api/session.create  { workspaceId, sessionId: "dsw-open-…" }
             └─ MessageBox confirmation
@@ -75,7 +77,7 @@ npm run build   # host (tsc) + client (tsdown -> lib/client.js)
 ## Known limitations
 
 - On Windows 11, third-party `Directory\shell` verbs may appear under "Show more options" (Shift+F10) instead of the top-level menu. Putting them at the top level requires a COM `IContextMenu` handler, which this plugin does not ship.
-- The bridge talks to the host over loopback, so DSH must be running.
+- The bridge talks to the host over loopback. It launches DSH when the host is down, but if DSH has never run (so no launch path is recorded), it falls back to asking you to start DSH first.
 
 ## License
 

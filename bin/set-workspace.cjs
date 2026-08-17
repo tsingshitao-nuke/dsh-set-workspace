@@ -96,13 +96,30 @@ function launchDsh(launchCommand) {
   }
 }
 
-/** Bring the just-launched DSH window to the foreground (best effort). */
-function bringToForeground(pid) {
-  if (!pid) return
+/**
+ * Bring the DSH UI to the foreground. When we launched it, activate the known
+ * PID. When it is already running, find the Desktop window by process name and
+ * activate it; if that process is absent (DSH is served into a regular
+ * browser), open/focus the loopback URL instead.
+ */
+function focusDsh(runtime, launchedPid) {
+  const exeName = (runtime.launchCommand || '').split(/[\\/]/).pop().replace(/\.exe$/i, '')
   const fire = () => {
     try {
       const { spawn } = require('node:child_process')
-      const ps = `(New-Object -ComObject WScript.Shell).AppActivate(${pid}) | Out-Null`
+      let ps
+      if (launchedPid) {
+        ps = `(New-Object -ComObject WScript.Shell).AppActivate(${launchedPid}) | Out-Null`
+      } else if (exeName) {
+        ps = [
+          "$ErrorActionPreference='SilentlyContinue'",
+          `$p = Get-Process -Name ${JSON.stringify(exeName)} | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1`,
+          'if ($p) { (New-Object -ComObject WScript.Shell).AppActivate($p.Id) | Out-Null }',
+          `else { Start-Process 'http://127.0.0.1:${runtime.port}' }`,
+        ].join('\n')
+      } else {
+        ps = `Start-Process 'http://127.0.0.1:${runtime.port}'`
+      }
       const child = spawn(
         'powershell.exe',
         ['-NoProfile', '-Command', ps],
@@ -146,8 +163,7 @@ async function withLaunch(fn, runtime) {
   for (;;) {
     try {
       const result = await fn(runtime.port)
-      if (launched) bringToForeground(pid)
-      return { result, launched }
+      return { result, launched, pid }
     } catch (error) {
       lastError = error
       if (!launched && runtime.launchCommand) {
@@ -166,8 +182,13 @@ async function main() {
   const runtime = readRuntime()
 
   let created
+  let launched = false
+  let launchedPid = 0
   try {
-    ;({ result: created } = await withLaunch(() => call('workspace.create', { path }, runtime.port), runtime))
+    const r = await withLaunch(() => call('workspace.create', { path }, runtime.port), runtime)
+    created = r.result
+    launched = r.launched
+    launchedPid = r.pid
   } catch (error) {
     const msg = String((error && error.message) || error)
     notify(T.failTitle, T.unreachable(runtime.port, msg), 16)
@@ -186,6 +207,9 @@ async function main() {
   }
 
   const workspace = result.value.workspace
+
+  // Bring the DSH UI to the foreground (Desktop window, or the browser page).
+  focusDsh(runtime, launched ? launchedPid : 0)
 
   try {
     await call('session.create', { workspaceId: workspace.workspaceId, sessionId: `dsw-open-${Date.now()}` }, runtime.port)

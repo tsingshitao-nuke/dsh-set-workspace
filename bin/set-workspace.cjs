@@ -76,9 +76,13 @@ function readJson(file, fallback) {
 
 function readRuntime() {
   const rt = readJson(RUNTIME_FILE, {})
+  const hasCommand = typeof rt.launchCommand === 'string' && rt.launchCommand !== ''
   return {
     port: Number.isInteger(rt.port) && rt.port > 0 ? rt.port : 2761,
+    // Backward compat: a pre-0.7 runtime.json only has launchCommand -> exe.
+    launchType: rt.launchType === 'exe' || rt.launchType === 'cli' ? rt.launchType : hasCommand ? 'exe' : 'none',
     launchCommand: typeof rt.launchCommand === 'string' ? rt.launchCommand : '',
+    launchArgs: Array.isArray(rt.launchArgs) ? rt.launchArgs : [],
   }
 }
 
@@ -102,11 +106,14 @@ function notify(title, message, icon) {
   } catch {}
 }
 
-function launchDsh(launchCommand) {
-  if (!launchCommand) return false
+function launchDsh(command, args = []) {
+  if (!command) return false
   try {
     const { spawn } = require('node:child_process')
-    const child = spawn(launchCommand, [], { detached: true, stdio: 'ignore' })
+    // A CLI boot writes kernel logs to the user profile, never the clicked
+    // folder, so pin the cwd for command launches.
+    const cwd = args.length ? homedir() : undefined
+    const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd })
     child.unref()
     return true
   } catch {
@@ -160,7 +167,7 @@ async function withApi(fn, runtime) {
     } catch (error) {
       lastError = error
       if (!launched && runtime.launchCommand) {
-        launched = launchDsh(runtime.launchCommand)
+        launched = launchDsh(runtime.launchCommand, runtime.launchArgs)
       }
       if (Date.now() >= deadline) {
         throw launched ? new Error(T.launchTimeout) : lastError
@@ -173,14 +180,13 @@ async function withApi(fn, runtime) {
 async function main() {
   const runtime = readRuntime()
   const config = readConfig()
-  // Default: the Desktop app. Use the browser page when configured, or when no
-  // Desktop launcher was ever recorded (headless / browser-only setup).
-  const useBrowser = config.ui === 'browser' || (config.ui !== 'desktop' && !runtime.launchCommand)
-
-  if (!useBrowser) {
-    // Desktop: launching the exe boots DSH when down, and triggers the app's
-    // second-instance focus when it is already running (like VS Code).
-    launchDsh(runtime.launchCommand)
+  // Desktop shell (exe): launching the exe boots DSH when down, and triggers
+  // the app's own single-instance focus when it is already running (VS Code
+  // pattern). Official CLI installs (cli): no pre-launch — withApi launches
+  // the recorded CLI command only when the port is unreachable, so a second
+  // kernel never races the first; focus happens in the browser page.
+  if (runtime.launchType === 'exe') {
+    launchDsh(runtime.launchCommand, runtime.launchArgs)
   }
 
   let created
@@ -205,9 +211,11 @@ async function main() {
 
   const workspace = result.value.workspace
 
-  // Browser mode: focus the DSH page in the browser (Desktop mode already
-  // focused via second-instance).
-  if (useBrowser) openUrl(runtime.port)
+  // Focus: the browser page when the user asked for it (config.json) or when
+  // there is no Desktop window to focus (cli / none); the Desktop app already
+  // focused itself via single-instance.
+  const openBrowser = config.ui === 'browser' || runtime.launchType !== 'exe'
+  if (openBrowser) openUrl(runtime.port)
 
   try {
     await call('session.create', { workspaceId: workspace.workspaceId, sessionId: `dsw-open-${Date.now()}` }, runtime.port)

@@ -9,7 +9,7 @@
 ## 功能
 
 - 在文件管理器里右键文件夹，选择"在此处打开 DSH 工作区"。
-- 若 DSH 未运行，桥接脚本会拉起它；若已在运行（即使最小化或在后台），DSH 窗口会被恢复并置前。
+- 若 DSH 未运行，桥接脚本会拉起它（桌面版拉起应用，官方 CLI/npm 安装则拉起 `dsh web`）；若已在运行（即使最小化或在后台），DSH 窗口会被恢复并置前。
 - 文件夹被注册为工作区（幂等），并在其中开启一个会话。
 - DSH 页面自动切到新工作区（客户端半部分监听该会话并打开它，无需刷新页面）。
 - 若你是在普通浏览器里看 DSH（而非桌面窗口），用 `--browser` 安装，桥接脚本会改为聚焦浏览器页面。
@@ -20,7 +20,7 @@
 
 ## 安装
 
-环境要求：Windows、`PATH` 里有 Node.js >= 20、已安装 DSH Desktop。DSH 未运行时桥接脚本会自动拉起；其启动路径来自 DSH 写出的运行时文件，因此首次使用前需先运行一次 DSH。
+环境要求：Windows、`PATH` 里有 Node.js >= 20、以及一个 DSH 安装——DSH Desktop 或官方 CLI（`npm i -g @deepseek-ai/dsh`）。DSH 未运行时桥接脚本会自动拉起；其启动路径来自 DSH 写出的运行时文件，因此首次使用前需先运行一次 DSH。
 
 一键安装（PowerShell 5.1+ / pwsh）：
 
@@ -73,6 +73,12 @@ DSH 客户端半部分监听会话列表，打开该 "dsw-open-…" 会话，页
 ```
 
 本 bundle 是标准的 host/client 双半结构 DSH 包。host 半部分（`src/index.ts`）把当前 webserver 端口与桌面启动命令写到 `~/.dsh/dsh-set-workspace/runtime.json`；客户端半部分（`src/client/index.ts`）负责切换。桥接脚本、鲸鱼图标与启动器复制到 `~/.dsh/dsh-set-workspace/`（无空格、重装后仍稳定的目录）；注册表项位于 `HKCU\Software\Classes\Directory\shell`（无需管理员权限）。
+
+## 兼容性
+
+- **DSH Desktop（Tauri / Electron）**：host 记录应用可执行文件；桥接脚本启动它来拉起 DSH，已运行时由应用自带的单实例处理器恢复并聚焦窗口（VS Code「通过 Code 打开」同款机制）。
+- **官方 CLI / npm 安装**（`npm i -g @deepseek-ai/dsh`，DSH 在浏览器里访问）：host 记录 `dsh web` 启动命令（即当前内核所用的同一个 node + `lib/bin.js`，带 `--no-open --host 127.0.0.1 --port <端口>`）；桥接脚本在 DSH 未运行时用它自举启动，并通过浏览器页面聚焦——无需桌面窗口。
+- 启动方式在 host 每次启动时重新探测，同一插件可自适应你升级到的任意安装形态。
 
 ## 构建
 

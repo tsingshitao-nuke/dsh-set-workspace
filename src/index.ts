@@ -10,8 +10,8 @@
  * @module dsh-set-workspace
  */
 import { homedir } from 'node:os'
-import { mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname, basename } from 'node:path'
+import { mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { join, dirname } from 'node:path'
 
 export const name = 'dsh-set-workspace'
 export const inject = ['webServer']
@@ -20,20 +20,30 @@ const RUNTIME_DIR = join(homedir(), '.dsh', 'dsh-set-workspace')
 const RUNTIME_FILE = join(RUNTIME_DIR, 'runtime.json')
 
 /**
- * Find the Electron app executable that launched this node host. The DSH
- * Desktop layout is `<app>/resources/node/node.exe` with the GUI at
- * `<app>/<AppName>.exe`, so we walk three levels up and pick the app exe.
- * Returns an empty string when the heuristic does not apply.
+ * Find the DSH Desktop launcher executable that owns this node host. Layouts:
+ * - Electron: `<app>/resources/node/node.exe` with the GUI at `<app>/<AppName>.exe`
+ * - Tauri:    `<app>/dsh-desktop/vendor/node/node.exe` with the GUI at `<app>/dsh-tauri-app.exe`
+ * We walk upward from the running node and return the first application exe
+ * (never node.exe / uninstall.exe); the Tauri launcher is preferred because it
+ * is the current app shell. Returns an empty string when no launcher is found.
  */
 function findLauncher(): string {
   try {
-    const appRoot = dirname(dirname(dirname(process.execPath)))
-    const conventional = join(appRoot, basename(appRoot) + '.exe')
-    if (statSync(conventional).isFile()) return conventional
-    for (const name of readdirSync(appRoot)) {
-      if (name.toLowerCase().endsWith('.exe') && !name.toLowerCase().includes('uninstall')) {
-        return join(appRoot, name)
+    let dir = dirname(process.execPath)
+    for (let hops = 0; hops < 10; hops++) {
+      let fallback = ''
+      for (const name of readdirSync(dir)) {
+        if (!/\.exe$/i.test(name)) continue
+        if (/uninstall/i.test(name)) continue
+        if (/^node/i.test(name)) continue
+        const full = join(dir, name)
+        if (/dsh-tauri-app/i.test(name)) return full
+        fallback ||= full
       }
+      if (fallback) return fallback
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
     }
   } catch {
     /* fall through */

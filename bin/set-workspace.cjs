@@ -77,7 +77,7 @@ function readJson(file, fallback) {
 function readRuntime() {
   const rt = readJson(RUNTIME_FILE, {})
   return {
-    port: Number.isInteger(rt.port) && rt.port > 0 ? rt.port : 10736,
+    port: Number.isInteger(rt.port) && rt.port > 0 ? rt.port : 2761,
     launchCommand: typeof rt.launchCommand === 'string' ? rt.launchCommand : '',
   }
 }

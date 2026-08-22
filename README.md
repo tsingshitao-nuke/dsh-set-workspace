@@ -9,7 +9,7 @@ Unofficial community project. Not affiliated with or endorsed by DeepSeek.
 ## What it does
 
 - Right-click a folder in File Explorer, then choose **Open DSH Workspace Here**.
-- If DSH is not running, the bridge launches it; if it is running (even minimized or in the background), the DSH window is restored and brought to the front.
+- If DSH is not running, the bridge launches it — the Desktop app, or the official `dsh` CLI in npm installs; if it is running (even minimized or in the background), the DSH window is restored and brought to the front.
 - The folder is registered as a workspace (idempotent) and a session is started in it.
 - The DSH page switches to the new workspace automatically (the client half watches for the session and opens it — no page reload).
 - If you view DSH in a regular browser instead of the Desktop window, install with `--browser`; the bridge then focuses the browser page.
@@ -20,7 +20,7 @@ Unofficial community project. Not affiliated with or endorsed by DeepSeek.
 
 ## Install
 
-Requirements: Windows, Node.js >= 20 on `PATH`, and DSH Desktop installed. The bridge launches DSH automatically when it is not running; it discovers the launch path from a runtime file that DSH writes, so run DSH once before the first use.
+Requirements: Windows, Node.js >= 20 on `PATH`, and a DSH installation — the DSH Desktop app or the official CLI (`npm i -g @deepseek-ai/dsh`). The bridge launches DSH automatically when it is not running; it discovers the launch path from a runtime file that DSH writes, so run DSH once before the first use.
 
 One-liner (PowerShell 5.1+ / pwsh):
 
@@ -75,6 +75,12 @@ Desktop window.
 ```
 
 The bundle is a standard host/client dual-half DSH package. The host half (`src/index.ts`) writes the current webserver port and the Desktop launch command to `~/.dsh/dsh-set-workspace/runtime.json`. The client half (`src/client/index.ts`) performs the switch. The bridge script, whale icon, and launcher are copied to `~/.dsh/dsh-set-workspace/` (space-free, stable across reinstalls); the registry entries live under `HKCU\Software\Classes\Directory\shell` (no admin rights).
+
+## Compatibility
+
+- **DSH Desktop (Tauri / Electron)**: the host records the app executable; the bridge launches it to boot DSH, and when it is already running the app's own single-instance handler restores and focuses the window (VS Code "Open with Code" pattern).
+- **Official CLI / npm install** (`npm i -g @deepseek-ai/dsh`, DSH served into a browser): the host records the `dsh web` launch command (the same node + `lib/bin.js` the running kernel uses, with `--no-open --host 127.0.0.1 --port <port>`); the bridge boots DSH through it when it is down and focuses the browser page — no desktop window required.
+- The launcher type is re-detected every time the host starts, so the same plugin adapts to whichever install you upgrade to.
 
 ## Build
 

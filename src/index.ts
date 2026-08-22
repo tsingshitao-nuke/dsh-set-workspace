@@ -10,8 +10,9 @@
  * @module dsh-set-workspace
  */
 import { homedir } from 'node:os'
-import { mkdirSync, writeFileSync, readdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { mkdirSync, writeFileSync, readdirSync, copyFileSync } from 'node:fs'
+import { join, dirname, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const name = 'dsh-set-workspace'
 export const inject = ['webServer']
@@ -20,14 +21,20 @@ const RUNTIME_DIR = join(homedir(), '.dsh', 'dsh-set-workspace')
 const RUNTIME_FILE = join(RUNTIME_DIR, 'runtime.json')
 
 /**
- * Find the DSH Desktop launcher executable that owns this node host. Layouts:
- * - Electron: `<app>/resources/node/node.exe` with the GUI at `<app>/<AppName>.exe`
- * - Tauri:    `<app>/dsh-desktop/vendor/node/node.exe` with the GUI at `<app>/dsh-tauri-app.exe`
- * We walk upward from the running node and return the first application exe
- * (never node.exe / uninstall.exe); the Tauri launcher is preferred because it
- * is the current app shell. Returns an empty string when no launcher is found.
+ * Find the DSH launcher for this installation. Supported layouts:
+ * - Desktop (Tauri):    `<app>/dsh-desktop/vendor/node/node.exe` + `<app>/dsh-tauri-app.exe`
+ * - Desktop (Electron): `<app>/resources/node/node.exe` + `<app>/<AppName>.exe`
+ * - Official CLI/npm:   the running kernel IS the `dsh` CLI — `process.argv[1]`
+ *   points at `@deepseek-ai/dsh/lib/bin.js`, which we can re-launch later to
+ *   boot a stopped DSH.
+ * Returns `{ type: 'exe' | 'cli' | 'none', command, args }`; `command` is the
+ * executable (exe path, or node for the CLI) and `args` the extra spawn args.
  */
-function findLauncher(): string {
+export function findLaunch(
+  port: number,
+): { type: 'exe' | 'cli' | 'none'; command: string; args: string[] } {
+  // 1. Desktop shell: walk upward from the running node, take the first app exe
+  //    (never node.exe / uninstall.exe); the Tauri launcher is preferred.
   try {
     let dir = dirname(process.execPath)
     for (let hops = 0; hops < 10; hops++) {
@@ -37,32 +44,51 @@ function findLauncher(): string {
         if (/uninstall/i.test(name)) continue
         if (/^node/i.test(name)) continue
         const full = join(dir, name)
-        if (/dsh-tauri-app/i.test(name)) return full
+        if (/dsh-tauri-app/i.test(name)) return { type: 'exe', command: full, args: [] }
         fallback ||= full
       }
-      if (fallback) return fallback
+      if (fallback) return { type: 'exe', command: fallback, args: [] }
       const parent = dirname(dir)
       if (parent === dir) break
       dir = parent
     }
   } catch {
+    /* no desktop shell */
+  }
+
+  // 2. Official CLI/npm install: re-launch the same entry the kernel was
+  //    started from, so a stopped DSH can be booted again (same invocation the
+  //    DSH Desktop supervisor uses: `node bin.js web --no-open --host ...`).
+  try {
+    const bin = typeof process.argv[1] === 'string' ? process.argv[1] : ''
+    if (bin && /[\\/](?:@deepseek-ai[\\/])?dsh[\\/]lib[\\/]bin\.js$/i.test(bin)) {
+      const args = [bin, 'web', '--no-open', '--host', '127.0.0.1']
+      if (port > 0) args.push('--port', String(port))
+      return { type: 'cli', command: process.execPath, args }
+    }
+  } catch {
     /* fall through */
   }
-  return ''
+
+  return { type: 'none', command: '', args: [] }
 }
 
 function publishRuntime(ctx: any): void {
   try {
     const port = ctx.webServer?.port
+    const actualPort = typeof port === 'number' && port > 0 ? port : 0
+    const launch = findLaunch(actualPort)
     mkdirSync(RUNTIME_DIR, { recursive: true })
     writeFileSync(
       RUNTIME_FILE,
       JSON.stringify(
         {
           host: '127.0.0.1',
-          port: typeof port === 'number' && port > 0 ? port : 0,
+          port: actualPort,
           execPath: process.execPath,
-          launchCommand: findLauncher(),
+          launchType: launch.type,
+          launchCommand: launch.command,
+          launchArgs: launch.args,
           cwd: process.cwd(),
           updatedAt: new Date().toISOString(),
         },
@@ -71,6 +97,10 @@ function publishRuntime(ctx: any): void {
       ),
       'utf8',
     )
+    // Keep the standalone bridge in sync: upgrading the bundle must also
+    // upgrade the copy the Explorer menu invokes (it lives outside the bundle).
+    const pkg = join(dirname(fileURLToPath(import.meta.url)), '..')
+    copyFileSync(join(pkg, 'bin', 'set-workspace.cjs'), join(RUNTIME_DIR, 'set-workspace.cjs'))
   } catch (error) {
     ctx.logger?.warn?.(`dsh-set-workspace: cannot write runtime.json: ${String(error)}`)
   }

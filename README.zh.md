@@ -9,7 +9,7 @@
 ## 功能
 
 - 在文件管理器里右键文件夹，选择"在此处打开 DSH 工作区"。
-- 若 DSH 未运行，桥接脚本会拉起它（桌面版拉起应用，官方 CLI/npm 安装则拉起 `dsh web`）；若已在运行（即使最小化或在后台），DSH 窗口会被恢复并置前。
+- 若 DSH 未运行，桥接脚本会拉起它——**官方 DeepSeek Harness 桌面版**、旧版 Tauri DSH Desktop，或官方 CLI；若已在运行（即使最小化或缩进托盘），窗口会被恢复并置前。
 - 文件夹被注册为工作区（幂等），并在其中开启一个会话。
 - DSH 页面自动切到新工作区（客户端半部分监听该会话并打开它，无需刷新页面）。
 - 若你是在普通浏览器里看 DSH（而非桌面窗口），用 `--browser` 安装，桥接脚本会改为聚焦浏览器页面。
@@ -20,7 +20,7 @@
 
 ## 安装
 
-环境要求：Windows、`PATH` 里有 Node.js >= 20、以及一个 DSH 安装——DSH Desktop 或官方 CLI（`npm i -g @deepseek-ai/dsh`）。DSH 未运行时桥接脚本会自动拉起；其启动路径来自 DSH 写出的运行时文件，因此首次使用前需先运行一次 DSH。
+环境要求：Windows、`PATH` 里有 Node.js >= 20、以及一个 DSH 安装——**官方 DeepSeek Harness 桌面版**、旧版 Tauri DSH Desktop，或官方 CLI（`npm i -g @deepseek-ai/dsh`）。DSH 未运行时桥接脚本会自动拉起；其启动路径来自 DSH 写出的运行时文件，因此首次使用前需先运行一次 DSH。
 
 一键安装（PowerShell 5.1+ / pwsh）：
 
@@ -34,20 +34,24 @@ Git Bash / WSL：
 curl -fsSL https://raw.githubusercontent.com/tsingshitao-nuke/dsh-set-workspace/main/scripts/install.sh | bash
 ```
 
-手动安装：
+安装脚本会把 bundle 装进它能找到的**每一个** DSH profile：官方桌面版跑的是 `desktop` profile（`~/.dsh/profiles/desktop`），`dsh web` 跑的是 `web`。两者可能同时存在，右键菜单对正在运行的那一个都有效。
+
+手动安装（官方桌面版）：
 
 ```sh
-# 1. 安装 bundle
-dsh plugin --profile web add github:tsingshitao-nuke/dsh-set-workspace
+# 1. 把 bundle 装进 desktop profile
+dsh plugin --profile desktop add github:tsingshitao-nuke/dsh-set-workspace
 
-# 2. 注册文件管理器右键菜单（先重启 DSH，让 host 半部分发布端口）
-node ~/.dsh/profiles/web/node_modules/dsh-set-workspace/bin/install-context-menu.cjs
+# 2. 注册文件管理器右键菜单，然后重启 DSH，让 host 半部分发布端口
+node ~/.dsh/profiles/desktop/node_modules/dsh-set-workspace/bin/install-context-menu.cjs
 ```
+
+手动安装（`dsh web` profile）：把上面的 `--profile desktop` 与路径换成 `web` 即可。
 
 移除菜单（保留 bundle）：
 
 ```sh
-node ~/.dsh/profiles/web/node_modules/dsh-set-workspace/bin/install-context-menu.cjs --uninstall
+node ~/.dsh/profiles/desktop/node_modules/dsh-set-workspace/bin/install-context-menu.cjs --uninstall
 ```
 
 ## 工作原理
@@ -57,40 +61,43 @@ node ~/.dsh/profiles/web/node_modules/dsh-set-workspace/bin/install-context-menu
   └─ wscript launch-hidden.vbs "%1"           （隐藏窗口）
        └─ node set-workspace.cjs "<文件夹>"
             ├─ 读  ~/.dsh/dsh-set-workspace/runtime.json   （端口 + 启动命令）
-            ├─ 启动 DSH Desktop 应用——未运行则启动；已运行则由应用自带的
+            ├─ 启动 DSH 桌面版——未运行则启动；已运行则由应用自带的
             │  单实例 second-instance 处理器恢复、显示并聚焦其窗口
             │  （与 VS Code「通过 Code 打开」同款机制）
-            ├─ 轮询等待 /api 就绪
-            ├─ POST /api/workspace.create { path }          （幂等）
-            ├─ POST /api/session.create  { workspaceId, sessionId: "dsw-open-…" }
+            ├─ 逐个探测回环端口（记录端口、其它 profile、实际在听的 DSH
+            │  进程、19387/3080），选择能应答的那一个
+            ├─ POST /api/workspace/create { request: { path } }   （幂等）
+            ├─ POST /api/session/create  { workspaceId, sessionId: "dsw-open-…" }
             └─ MessageBox 确认
 
 DSH 客户端半部分监听会话列表，打开该 "dsw-open-…" 会话，页面即切到该工作区。
-
-浏览器模式：若你是在普通浏览器里访问 DSH，安装时加 `--browser`
-（或手动写 `{"ui":"browser"}` 到 ~/.dsh/dsh-set-workspace/config.json），
-桥接脚本会改为通过回环 URL 聚焦浏览器页面，而不是桌面窗口。
 ```
 
 本 bundle 是标准的 host/client 双半结构 DSH 包。host 半部分（`src/index.ts`）把当前 webserver 端口与桌面启动命令写到 `~/.dsh/dsh-set-workspace/runtime.json`；客户端半部分（`src/client/index.ts`）负责切换。桥接脚本、鲸鱼图标与启动器复制到 `~/.dsh/dsh-set-workspace/`（无空格、重装后仍稳定的目录）；注册表项位于 `HKCU\Software\Classes\Directory\shell`（无需管理员权限）。
 
 ## 兼容性
 
-- **DSH Desktop（Tauri / Electron）**：host 记录应用可执行文件；桥接脚本启动它来拉起 DSH，已运行时由应用自带的单实例处理器恢复并聚焦窗口（VS Code「通过 Code 打开」同款机制）。
+- **官方 DeepSeek Harness 桌面版（Electron，`deepseek-ai/deepseek-harness` → `apps/desktop`）**：应用把运行时打进 `resources/app.asar`，并以子进程方式启动它（`…/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/index.js`）。host 半部分先按内核自身的启动参数识别该布局，再回退到当前可执行文件，最后回退到 Windows 安装注册信息（`DisplayIcon`/`InstallLocation`/`UninstallString`），记录 `<安装目录>\DeepSeek Harness.exe`。DSH 未运行时再次启动该 exe 即可拉起；已运行时由应用自身的 `requestSingleInstanceLock` + `second-instance` 处理器（Electron 标准行为，与 VS Code 同款）恢复、显示并聚焦窗口。桌面版默认端口 `19387`。
+- **旧版 DSH Desktop（Tauri）**：`<app>/dsh-desktop/...` + `<app>/dsh-tauri-app.exe` 依旧能被识别并以同样方式启动。
 - **官方 CLI / npm 安装**（`npm i -g @deepseek-ai/dsh`，DSH 在浏览器里访问）：host 记录 `dsh web` 启动命令（即当前内核所用的同一个 node + `lib/bin.js`，带 `--no-open --host 127.0.0.1 --port <端口>`）；桥接脚本在 DSH 未运行时用它自举启动，并通过浏览器页面聚焦——无需桌面窗口。
+- **陈旧的 runtime 文件会自愈**：升级或迁移安装（例如从已删除的 Tauri 目录换到官方 Electron 版）后，记录的端口与启动程序都会失效。此时桥接脚本会重新发现实际在听的端口，并重新寻找当前安装——`config.json` 覆盖（`{"launch":{"exe":"…"}}`）、在运行的桌面进程、记录的安装位置、Windows 注册信息、或旧启动程序所在目录的兄弟目录。
 - 启动方式在 host 每次启动时重新探测，同一插件可自适应你升级到的任意安装形态。
 
 ## 构建
 
 ```sh
 npm install
-npm run build   # host（tsc）+ client（tsdown -> lib/client.js）
+npm run build        # host（tsc）+ client（tsdown -> lib/client.js）
+npm run typecheck
+npm test             # 启动方式探测 + README 测试（Node 22+，使用 --experimental-strip-types）
+npm run test:bridge  # 可选：对正在运行的 DSH 做一次端到端桥接测试
 ```
 
 ## 已知限制
 
 - Windows 11 下，第三方 `Directory\shell` 项可能出现在"显示更多选项"（Shift+F10）而非顶级菜单。要放到顶级需 COM `IContextMenu` 处理器，本插件未提供。
 - 桥接脚本经回环地址访问 host。host 未运行时会自动拉起；但若 DSH 从未运行过（没有记录启动路径），则回退为提示你先手动启动 DSH。
+- 桌面版关闭窗口是隐藏而非退出；右键菜单复用应用自身的单实例聚焦机制，`dsh://open` 仍是应用自带的唤起窗口方式。
 - 浏览器模式会聚焦浏览器并打开 DSH 页面；Windows 没有跨浏览器「激活某个已存在标签页」的 API，因此可能新开一个标签页而不是切到已有的那个。
 
 ## License
